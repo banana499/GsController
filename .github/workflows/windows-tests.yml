@@ -1,0 +1,63 @@
+name: Windows fixture tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safe-tests:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run safe default suites with Windows PowerShell 5.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
+              throw 'Windows PowerShell 5.1 is required.'
+          }
+          $logRoot = Join-Path $env:RUNNER_TEMP 'gs-fixture-logs'
+          $fixtureRoot = Join-Path $env:RUNNER_TEMP ('gs-fixture-work-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $logRoot, $fixtureRoot | Out-Null
+          # The runner and all fixture children inherit this isolated temp root.
+          $env:TEMP = $fixtureRoot
+          $env:TMP = $fixtureRoot
+          $stdout = Join-Path $logRoot 'stdout.log'
+          $stderr = Join-Path $logRoot 'stderr.log'
+          $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          # No integration switch: no MSI installation or real task/device access.
+          # Start-Process preserves the exit code without a native stderr pipeline.
+          $process = Start-Process -FilePath $powershellExe -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '".\tests\Invoke-All.ps1"') -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+          $testExitCode = $process.ExitCode
+          Get-Content -LiteralPath $stdout, $stderr
+          # Only this invocation's runner failure logs, never fixture directories.
+          Get-ChildItem -LiteralPath $fixtureRoot -Filter 'Invoke-All-*-Invoke-*Tests.log' -File | Copy-Item -Destination $logRoot
+          if ($null -eq $testExitCode) { throw 'Test process did not return an exit code.' }
+          exit $testExitCode
+
+      - name: Upload fixture test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-fixture-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gs-fixture-logs/stdout.log
+            ${{ runner.temp }}/gs-fixture-logs/stderr.log
+            ${{ runner.temp }}/gs-fixture-logs/Invoke-All-*-Invoke-*Tests.log
+          if-no-files-found: warn
+          retention-days: 7
+          include-hidden-files: false

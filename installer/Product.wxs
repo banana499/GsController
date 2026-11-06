@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="GsControllerSample" Language="2052" Version="$(var.Version)" Manufacturer="Local Development" UpgradeCode="7E2B57E4-77C2-4B65-AE8A-1EE44A2E90A7">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" />
+    <Feature Id="Main" Title="GsControllerSample" Level="1">
+      <ComponentGroupRef Id="SampleFiles" />
+    </Feature>
+    <Property Id="FAILTEST" Value="0" />
+    <CustomAction Id="FailForTest" Directory="INSTALLFOLDER" ExeCommand="cmd.exe /c exit 1" Execute="deferred" Return="check" Impersonate="no" />
+    <InstallExecuteSequence>
+      <Custom Action="FailForTest" After="InstallFiles">FAILTEST=1</Custom>
+    </InstallExecuteSequence>
+  </Product>
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="ManufacturerFolder" Name="Local Development">
+          <Directory Id="INSTALLFOLDER" Name="GsControllerSample" />
+        </Directory>
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="ManufacturerData" Name="Local Development">
+          <Directory Id="APPLICATIONDATADIRECTORY" Name="GsControllerSample" />
+        </Directory>
+      </Directory>
+    </Directory>
+  </Fragment>
+  <Fragment>
+    <ComponentGroup Id="SampleFiles" Directory="INSTALLFOLDER">
+      <Component Id="SampleCommand" Guid="E7D72345-A26C-44F2-98E6-460D215BF2F0" Win64="yes">
+        <File Id="SampleCommandFile" Source="$(var.SampleDir)\Get-SampleInfo.ps1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -1,0 +1,54 @@
+# Binaries and build outputs
+*.exe
+*.dll
+*.dmp
+*.pdb
+*.zip
+*.7z
+*.msi
+*.obj
+*.lib
+
+# Certificates, keys and pairing material
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.cnf
+pair_state.json
+
+# Runtime logs, state and temporary evidence
+*.log
+*.out
+*.err
+*.json
+*.xml
+*.csv
+*.txt
+logs/
+state/
+__pycache__/
+*.pyc
+
+# Local environments and editors
+.venv/
+venv/
+.vscode/
+.idea/
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+.worktrees/
+
+artifacts/
+
+# Runtime bundle is supplied separately; never commit its contents.
+runtime-bundle/*
+!runtime-bundle/README.md
+!runtime-bundle/manifest.example.json
+!product/*.json

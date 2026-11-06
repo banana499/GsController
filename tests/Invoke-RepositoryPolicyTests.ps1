@@ -47,8 +47,9 @@ function Get-PolicyErrors {
     $jobs = [regex]::Match($textLf, '(?ms)^jobs:\n(.+)\z').Groups[1].Value
     if (@([regex]::Matches($jobs, '(?m)^  [a-z][a-z0-9_-]*:\s*$')).Count -ne 1 -or
         $textLf -notmatch '(?m)^jobs:\n  safe-tests:\n    runs-on: windows-2022\n    timeout-minutes: (?:[1-9]|[1-5][0-9]|60)\n') { $errors.Add('runner') }
+    # Only the built-in shell makes GitHub name the generated script with .ps1.
     if (@([regex]::Matches($textLf, '(?m)^\s*shell:')).Count -ne 1 -or
-        $textLf -notmatch '(?m)^        shell: powershell\.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \{0\}$') { $errors.Add('shell') }
+        $textLf -notmatch '(?m)^        shell: powershell$') { $errors.Add('shell') }
     $actions = @([regex]::Matches($textLf, '(?m)^\s*uses: (.+)$') | ForEach-Object { $_.Groups[1].Value })
     if (($actions -join ',') -cne 'actions/checkout@v4,actions/upload-artifact@v4' -or
         @([regex]::Matches($textLf, '(?m)^      - name:')).Count -ne 3) { $errors.Add('steps') }
@@ -121,7 +122,8 @@ $mutations = @(
     @{ Name = 'write permission'; From = '  contents: read'; To = '  contents: write'; Error = 'permissions' },
     @{ Name = 'job permission override'; From = '    runs-on:'; To = "    permissions: write-all`n    runs-on:"; Error = 'permissions' },
     @{ Name = 'self-hosted runner'; From = 'runs-on: windows-2022'; To = 'runs-on: self-hosted'; Error = 'runner' },
-    @{ Name = 'PowerShell 7 shell'; From = 'shell: powershell.exe'; To = 'shell: pwsh'; Error = 'shell' },
+    @{ Name = 'PowerShell 7 shell'; From = 'shell: powershell'; To = 'shell: pwsh'; Error = 'shell' },
+    @{ Name = 'custom unknown shell'; From = 'shell: powershell'; To = 'shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}'; Error = 'shell' },
     @{ Name = 'retained checkout credential'; From = 'persist-credentials: false'; To = 'persist-credentials: true'; Error = 'credentials' },
     @{ Name = 'integration switch'; From = 'Invoke-All.ps1'; To = 'Invoke-All.ps1 -IncludeIntegration'; Error = 'safe-default' },
     @{ Name = 'masked failure exit'; From = 'exit $testExitCode'; To = 'exit 0'; Error = 'exit-code' },

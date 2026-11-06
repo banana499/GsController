@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        shell: powershell
     steps:
       - name: Check out source
         uses: actions/checkout@v4

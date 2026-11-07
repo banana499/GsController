@@ -290,6 +290,27 @@ try {
         }
     }
 
+    Invoke-Test 'manifest JSON preserves flat scalar rows for one and multiple files in PowerShell 5.1' {
+        foreach ($count in @(1, 2)) {
+            $rows = @()
+            foreach ($index in 1..$count) { $rows += [pscustomobject]@{ relativePath = ('file' + $index + '.ps1'); sha256 = ('a' * 64) } }
+            $json = ConvertTo-Json -InputObject $rows
+            $parsed = ConvertFrom-GsAcceptanceManifestJson -Content $json
+            Assert-True ($parsed.Count -eq $count) 'file count survives JSON parsing without an outer array'
+            foreach ($row in $parsed) {
+                Assert-True ($row.relativePath -is [string]) 'relativePath remains scalar'
+                Assert-True ((Join-Path $workDir $row.relativePath).EndsWith($row.relativePath)) 'the parsed path works with Join-Path'
+            }
+            $wrapped = ,$rows
+            Assert-True (-not (Test-GsManifestRows -Rows $wrapped).Accepted) 'nested rowsets cannot pass structural validation'
+        }
+        foreach ($invalid in @('[]', '{"relativePath":"x","sha256":"abc"}', '[{"relativePath":["x"],"sha256":"abc"}]')) {
+            $rejected = $false
+            try { $null = ConvertFrom-GsAcceptanceManifestJson -Content $invalid } catch { $rejected = $true }
+            Assert-True $rejected 'invalid manifest JSON is rejected before installation'
+        }
+    }
+
     Invoke-Test 'native ABI: declarations match the documented Msi signatures exactly (reflection only)' {
         $native = Get-GsMsiNative
         $target = $native.GetMethod('MsiGetShortcutTargetW')

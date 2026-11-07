@@ -1016,6 +1016,31 @@ Invoke-Test 'bounded stream reader completes, caps and times out' {
     Assert-True $zero.Complete 'empty stream completes with zero bytes'
 }
 
+Invoke-Test 'local address metadata preserves arrays for zero, one and multiple addresses' {
+    $empty = Get-GsConsoleLocalAddresses -InterfaceProvider { @() }
+    Assert-True ($empty -is [array]) 'zero addresses remain an array'
+    Assert-Equal 0 $empty.Count 'zero addresses remain empty'
+    $nic = [pscustomobject]@{
+        OperationalStatus = [System.Net.NetworkInformation.OperationalStatus]::Up
+        NetworkInterfaceType = [System.Net.NetworkInformation.NetworkInterfaceType]::Ethernet
+        Addresses = @('192.0.2.10')
+    }
+    $nic | Add-Member ScriptMethod GetIPProperties {
+        return [pscustomobject]@{ UnicastAddresses = @($this.Addresses | ForEach-Object {
+            [pscustomobject]@{ Address = [System.Net.IPAddress]::Parse($_) }
+        }) }
+    }
+    $one = Get-GsConsoleLocalAddresses -InterfaceProvider { $nic }
+    Assert-True ($one -is [array]) 'one address remains an array'
+    Assert-Equal 1 $one.Count 'one address is returned'
+    Assert-Equal '192.0.2.10' $one[0] 'the complete address is retained'
+    $nic.Addresses = @('192.0.2.10', '198.51.100.20')
+    $many = Get-GsConsoleLocalAddresses -InterfaceProvider { $nic }
+    Assert-True ($many -is [array]) 'multiple addresses remain an array'
+    Assert-Equal 2 $many.Count 'both addresses are retained'
+    Assert-Equal '["192.0.2.10"]' (ConvertTo-Json -InputObject $one -Compress) 'the API serializes one address as a JSON array'
+}
+
 Invoke-Test 'local address metadata is private IPv4 only, never MACs or loopback' {
     $addresses = Get-GsConsoleLocalAddresses
     Assert-True ($addresses.Count -le 8) 'addresses are capped'

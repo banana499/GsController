@@ -318,7 +318,13 @@ function Test-GsManifestRows {
     }
     $seen = @{}
     foreach ($row in $Rows) {
-        $relative = [string]$row.relativePath
+        if ($null -eq $row -or $row.GetType().Name -ne 'PSCustomObject' -or
+            -not $row.PSObject.Properties['relativePath'] -or -not $row.PSObject.Properties['sha256'] -or
+            $row.relativePath -isnot [string] -or $row.sha256 -isnot [string]) {
+            $violations += 'each manifest row must be an object with scalar string relativePath and sha256'
+            continue
+        }
+        $relative = $row.relativePath
         if ([string]::IsNullOrWhiteSpace($relative)) {
             $violations += 'a manifest row has a blank relativePath'
             continue
@@ -338,6 +344,18 @@ function Test-GsManifestRows {
         }
     }
     return [pscustomobject]@{ Accepted = ($violations.Count -eq 0); Violations = @($violations) }
+}
+
+function ConvertFrom-GsAcceptanceManifestJson {
+    # PS 5.1 emits a JSON array as one pipeline object. Do not surround the
+    # conversion pipeline with @(), which introduces an extra array layer.
+    param([Parameter(Mandatory = $true)][string]$Content)
+    $parsed = ConvertFrom-Json -InputObject $Content -ErrorAction Stop
+    if ($parsed -isnot [array]) { throw 'The manifest must be a JSON array.' }
+    $rows = [object[]]$parsed
+    $validation = Test-GsManifestRows -Rows $rows
+    if (-not $validation.Accepted) { throw ('Invalid manifest: ' + ($validation.Violations -join '; ')) }
+    return ,$rows
 }
 
 function Test-GsManifestComparison {
@@ -612,10 +630,10 @@ try {
     # installed state is still covered by the finally cleanup.
     $script:GsOwnProductCodes = @($summary030.ProductCode, $summary031.ProductCode)
     # Validate both manifests before any install attempt.
-    $manifest030Rows = @(Get-Content -LiteralPath $Manifest030 | ConvertFrom-Json)
+    $manifest030Rows = ConvertFrom-GsAcceptanceManifestJson -Content ([IO.File]::ReadAllText($Manifest030))
     $manifest030Structure = Test-GsManifestRows -Rows $manifest030Rows
     if (-not $manifest030Structure.Accepted) { throw ('manifest030 is invalid: ' + ($manifest030Structure.Violations -join '; ')) }
-    $manifest031Rows = @(Get-Content -LiteralPath $Manifest031 | ConvertFrom-Json)
+    $manifest031Rows = ConvertFrom-GsAcceptanceManifestJson -Content ([IO.File]::ReadAllText($Manifest031))
     $manifest031Structure = Test-GsManifestRows -Rows $manifest031Rows
     if (-not $manifest031Structure.Accepted) { throw ('manifest031 is invalid: ' + ($manifest031Structure.Violations -join '; ')) }
 
@@ -868,8 +886,7 @@ try {
     # FAILURE; only EMPTY directory residue is recorded, never deleted.
     # MSI product registration is checked separately from payload removal.
     $payloadResidue = @()
-    $rows031 = @(Get-Content -LiteralPath $Manifest031 | ConvertFrom-Json)
-    foreach ($row in $rows031) {
+    foreach ($row in $manifest031Rows) {
         $installed = Join-Path $installRoot $row.relativePath
         if (Test-Path -LiteralPath $installed -PathType Leaf) { $payloadResidue += $row.relativePath }
     }

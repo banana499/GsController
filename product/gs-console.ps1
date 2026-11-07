@@ -1550,10 +1550,15 @@ function Start-GsConsoleDemoAction {
 
 function Get-GsConsoleLocalAddresses {
     # Read-only local private IPv4 metadata (interface addresses only; no
-    # MACs, no device identifiers). Capped at 8 entries.
+    # MACs, no device identifiers). Capped at 8 entries. The provider seam
+    # is for in-process fixtures; the HTTP API cannot supply it.
+    param([AllowNull()][scriptblock]$InterfaceProvider = $null)
     $result = @()
     try {
-        foreach ($nic in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+        $interfaces = if ($null -ne $InterfaceProvider) { & $InterfaceProvider } else {
+            [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
+        }
+        foreach ($nic in $interfaces) {
             if ($result.Count -ge 8) { break }
             if ($nic.OperationalStatus -ne [System.Net.NetworkInformation.OperationalStatus]::Up) { continue }
             if ($nic.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback) { continue }
@@ -1568,7 +1573,7 @@ function Get-GsConsoleLocalAddresses {
             }
         }
     } catch { }
-    return $result
+    return ,$result
 }
 
 function Test-GsConsoleDeployedMarker {

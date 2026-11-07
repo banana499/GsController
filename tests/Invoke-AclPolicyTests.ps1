@@ -74,7 +74,10 @@ function Assert-HasFinding {
 # Runs the plan tool in a child powershell.exe with a hard deadline so a
 # regression fails the suite instead of hanging it. Uses -Command (not
 # -File) because the AclSddl/ItemState seams are string arrays and -File
-# does not split comma-joined tokens into arrays.
+# does not split comma-joined tokens into arrays. Stdout/stderr are decoded
+# as UTF-8 explicitly (and the raw stdout bytes are returned) because the
+# tool itself emits UTF-8 regardless of the host console codepage; a
+# codepage-dependent default decode would corrupt CJK path characters.
 function Invoke-PlanTool {
     param([string]$ToolArguments)
     $exe = Join-Path $PSHOME 'powershell.exe'
@@ -84,18 +87,47 @@ function Invoke-PlanTool {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $psi.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
     $process = [System.Diagnostics.Process]::Start($psi)
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $stdoutMemory = New-Object System.IO.MemoryStream
+    $stderrMemory = New-Object System.IO.MemoryStream
+    $stdoutCopy = $process.StandardOutput.BaseStream.CopyToAsync($stdoutMemory)
+    $stderrCopy = $process.StandardError.BaseStream.CopyToAsync($stderrMemory)
     $deadline = [DateTime]::UtcNow.AddSeconds(90)
     while ((-not $process.HasExited) -and ([DateTime]::UtcNow -lt $deadline)) { Start-Sleep -Milliseconds 100 }
     if (-not $process.HasExited) {
         try { $process.Kill() } catch { }
         throw 'Get-GsAclPlan.ps1 exceeded the 90 second deadline'
     }
-    $stdout = $stdoutTask.GetAwaiter().GetResult()
-    $stderr = $stderrTask.GetAwaiter().GetResult()
-    return [pscustomobject]@{ ExitCode = $process.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    # PS 5.1: GetResult() on a non-generic Task leaks a VoidTaskResult into
+    # the pipeline, which would corrupt the function's return value - the
+    # assignments must swallow it.
+    $null = $stdoutCopy.GetAwaiter().GetResult()
+    $null = $stderrCopy.GetAwaiter().GetResult()
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    return [pscustomobject]@{
+        ExitCode     = $process.ExitCode
+        StdOut       = $utf8.GetString($stdoutMemory.ToArray())
+        StdErr       = $utf8.GetString($stderrMemory.ToArray())
+        StdOutBytes  = $stdoutMemory.ToArray()
+    }
+}
+
+function Assert-ContainsBytes {
+    param([byte[]]$Haystack, [byte[]]$Needle, [string]$Message)
+    if ($Needle.Count -eq 0 -or $Needle.Count -gt $Haystack.Count) {
+        throw "Assertion failed: $Message (needle length $($Needle.Count) vs haystack $($Haystack.Count))"
+    }
+    $found = $false
+    for ($i = 0; $i -le $Haystack.Count - $Needle.Count; $i++) {
+        $ok = $true
+        for ($j = 0; $j -lt $Needle.Count; $j++) {
+            if ($Haystack[$i + $j] -ne $Needle[$j]) { $ok = $false; break }
+        }
+        if ($ok) { $found = $true; break }
+    }
+    if (-not $found) { throw "Assertion failed: $Message (byte sequence not found)" }
 }
 
 function ConvertFrom-PlanJson {
@@ -664,18 +696,35 @@ try {
 
     Invoke-Test 'CJK path characters survive the emitted JSON and roundtrip' {
         # A fixture directory name with CJK characters (codepoints, ASCII
-        # test source): the built-in serializer keeps them as characters in
-        # the JSON text and ConvertFrom-Json restores them.
+        # test source). Contract: the PARSED JSON restores the path exactly;
+        # the raw stdout must carry the CJK name as its UTF-8 byte sequence
+        # because the tool forces UTF-8 stdout for its own process. This is
+        # what CI (windows-2022, codepage 437) caught: the old write went
+        # through the host codepage and destroyed the characters at the byte
+        # level before any JSON parsing could happen.
         $cjkName = [string][char]0x4E2D + [char]0x6587
         $state = Join-Path $workRoot ($cjkName + '-state')
         New-Item -ItemType Directory -Path (Join-Path $state 'runtime\bin') -Force | Out-Null
         $seam = "'" + $canonicalPolicySddl + "','" + $canonicalPolicySddl + "','" + $canonicalPolicySddl + "'"
         $result = Invoke-PlanTool ('-StateDir ''' + $state + ''' -AclSddl ' + $seam)
         Assert-Equal 0 $result.ExitCode 'clean plan'
-        Assert-True ($result.StdOut.Contains($cjkName)) 'raw output carries the CJK characters'
-        Assert-True ($result.StdOut.Contains([char]92 + [char]92)) 'raw output escapes path separators as double backslashes'
+
+        # Byte level: UTF-8 bytes of the CJK name must be present in the
+        # raw stdout bytes, independent of the host console codepage.
+        $needle = [System.Text.Encoding]::UTF8.GetBytes($cjkName)
+        Assert-ContainsBytes $result.StdOutBytes $needle 'raw stdout bytes must contain the UTF-8 encoding of the CJK name'
+        Assert-True ($result.StdOut.Contains($cjkName)) 'decoded raw output carries the CJK characters'
+
+        # Parse level: the JSON must roundtrip the CJK characters exactly;
+        # this is the binding contract, independent of raw text shape.
         $plan = ConvertFrom-PlanJson $result.StdOut
         Assert-True ($plan.Data.Targets[0].path.Contains([char]0x4E2D)) 'roundtrip restores the CJK characters'
+        $profilePath = [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile)
+        $expectedStateDir = $state
+        if ($state.StartsWith($profilePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $expectedStateDir = '<UserProfile>' + $state.Substring($profilePath.Length)
+        }
+        Assert-Equal $expectedStateDir $plan.Data.StateDir 'parsed StateDir restores the CJK path exactly'
     }
 
     Invoke-Test 'plan output leaks neither machine SIDs nor the account name nor the profile path' {

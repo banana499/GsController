@@ -113,6 +113,21 @@ $ErrorActionPreference = 'Stop'
 $moduleManifest = Join-Path $PSScriptRoot '..\src\GsSecurity\GsSecurity.psd1'
 Import-Module $moduleManifest -Force -ErrorAction Stop
 
+function Write-GsPlanStdout {
+    # Deterministic stdout encoding: PS 5.1 fixes the redirected-stdout
+    # writer encoding at host startup, so changing [Console]::OutputEncoding
+    # mid-run does NOT affect Write-Output (verified: under codepage 437 the
+    # setter reports utf-8 while Write-Output still emits '?'). The JSON is
+    # therefore written as UTF-8 bytes directly to the stdout handle:
+    # codepage-independent, process-scoped, no system setting is touched.
+    param([AllowNull()][string]$Text)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $bytes = $utf8.GetBytes(([string]$Text) + [Environment]::NewLine)
+    $stdout = [Console]::OpenStandardOutput()
+    $stdout.Write($bytes, 0, $bytes.Length)
+    $stdout.Flush()
+}
+
 # ---------------------------------------------------------------------------
 # Redaction. Everything emitted passes through a final walk that masks
 # machine-local SIDs (S-1-5-21-*-$RID) and the user profile path prefix, so
@@ -257,7 +272,7 @@ if ($errors.Count -gt 0) {
         Errors  = $errors.ToArray()
     }
     $masked = Hide-GsPlanInObject -Value $result
-    Write-Output (ConvertTo-Json -InputObject $masked -Depth 12)
+    Write-GsPlanStdout -Text (ConvertTo-Json -InputObject $masked -Depth 12)
     exit 1
 }
 
@@ -497,5 +512,5 @@ $result = [ordered]@{
 }
 
 $masked = Hide-GsPlanInObject -Value $result
-Write-Output (ConvertTo-Json -InputObject $masked -Depth 12)
+Write-GsPlanStdout -Text (ConvertTo-Json -InputObject $masked -Depth 12)
 if ($masked.Success) { exit 0 } else { exit 1 }

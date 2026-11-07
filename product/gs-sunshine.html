@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'">
+<title>GsController Sunshine 模式</title>
+<link rel="stylesheet" href="/gs-console.css">
+<link rel="stylesheet" href="/gs-sunshine.css">
+</head>
+<body data-mode="__GS_MODE__">
+<noscript><p class="noscript">下面的三步引导无需 JavaScript 即可阅读，官方链接也可以直接打开；只有“刷新检查”的本机状态提示需要启用 JavaScript 才能显示。</p></noscript>
+
+<header class="topbar">
+  <span class="topbar__brand">GsController Sunshine 引导</span>
+  <span id="mode-badge" class="badge">Sunshine 模式</span>
+</header>
+
+<!-- 演示模式横幅（仅演示模式下由脚本显示） -->
+<div id="demo-banner" class="banner banner--demo" hidden>
+  <p class="banner__text"><strong>演示模式</strong>：页面里的检查结果是模拟数据，不访问这台电脑，也不代表 Sunshine 已安装、已配对或串流可用。</p>
+</div>
+
+<!-- 服务不可达横幅 -->
+<div id="offline-banner" class="banner banner--offline" hidden>
+  <p class="banner__text">暂时无法连接本机的控制台服务，“刷新检查”暂不可用；下面的引导步骤与官方链接仍然有效。</p>
+  <button id="offline-retry" type="button" class="btn">重试</button>
+</div>
+
+<!-- 无会话标识 / 会话过期时的提示卡片 -->
+<div id="session-screen" class="sun-session" hidden>
+  <div class="session-card">
+    <h1 id="session-title" tabindex="-1">无法打开 Sunshine 引导页</h1>
+    <p id="session-text"></p>
+    <button id="session-retry" type="button" class="btn">重试</button>
+  </div>
+</div>
+
+<main class="sun-main">
+  <h1 id="page-title" tabindex="-1">Sunshine 模式：三步开始串流</h1>
+  <p class="page-intro">此模式使用官方 Sunshine 作为本机串流服务端。账号、PIN 配对和串流设置都在 Sunshine 与 Moonlight 的官方界面里完成；本页面只提供固定入口和只读提示，不会自动下载、安装或登录任何东西。</p>
+
+  <!-- 三步新用户流程：静态内容，不依赖 JavaScript -->
+  <ol class="sun-steps">
+    <li class="sun-step">
+      <span class="sun-step__num" aria-hidden="true">1</span>
+      <div class="sun-step__body">
+        <h2>下载并安装 Sunshine</h2>
+        <p>到 Sunshine 官方发布页获取 Windows x64 安装包，按官方安装界面完成安装。本产品不会自动下载或执行安装包。</p>
+        <a class="btn" href="https://github.com/LizardByte/Sunshine/releases/latest" target="_blank" rel="noopener noreferrer">打开官方发布页</a>
+      </div>
+    </li>
+    <li class="sun-step">
+      <span class="sun-step__num" aria-hidden="true">2</span>
+      <div class="sun-step__body">
+        <h2>在 Sunshine 管理页创建账号</h2>
+        <p>在本机浏览器打开固定地址 https://localhost:47990 的 Sunshine 管理页，按官方界面创建账号。首次访问可能出现自签名证书提示，请按官方文档核对本机站点后继续；本产品不会绕过证书检查。</p>
+        <a class="btn" href="https://localhost:47990" target="_blank" rel="noopener noreferrer">打开 Sunshine 管理页</a>
+      </div>
+    </li>
+    <li class="sun-step">
+      <span class="sun-step__num" aria-hidden="true">3</span>
+      <div class="sun-step__body">
+        <h2>在 Moonlight 添加主机并确认 PIN</h2>
+        <p>在客户端设备上安装 Moonlight 并添加这台电脑；客户端显示 PIN 后，到 Sunshine 自己的 PIN 配对页面完成确认，再在 Moonlight 里选择 Desktop 或应用开始串流。PIN 只在官方页面输入，本页面不收集 PIN。</p>
+        <a class="btn" href="https://moonlight-stream.org" target="_blank" rel="noopener noreferrer">打开 Moonlight 官网</a>
+      </div>
+    </li>
+  </ol>
+
+  <!-- 只读状态提示：需要 JavaScript 与会话 -->
+  <div id="app" hidden>
+    <section class="panel" aria-labelledby="check-title">
+      <h2 id="check-title" class="panel__title">本机状态提示</h2>
+      <p class="page-intro">以下结果是只读提示：检测到程序文件或端口有响应，都不代表安装验证、账号创建或配对已完成。</p>
+      <div class="sun-status">
+        <button id="btn-refresh" type="button" class="btn btn--primary">刷新检查</button>
+        <span id="check-status" class="form-status" role="status"></span>
+      </div>
+      <dl id="status-facts" class="facts"></dl>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="limits-title">
+    <h2 id="limits-title" class="panel__title">本页面的边界</h2>
+    <ul class="steps">
+      <li>不提供旧运行时的启动、停止、部署或开机自启控件；Sunshine 服务由它自己的界面管理。</li>
+      <li>不收集、不保存 Sunshine 的账号、密码、PIN 或证书；这些只在官方页面中输入。</li>
+      <li>“端口有响应”只是本机端口提示，不代表程序身份已验证或已配对；配对与串流结果以 Sunshine 和 Moonlight 的实际显示为准。</li>
+    </ul>
+  </section>
+</main>
+
+<div id="live-region" class="visually-hidden" aria-live="polite"></div>
+
+<script src="/gs-sunshine.js"></script>
+</body>
+</html>

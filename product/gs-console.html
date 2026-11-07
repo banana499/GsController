@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'">
+<title>GsController 本地控制台</title>
+<link rel="stylesheet" href="/gs-console.css">
+</head>
+<body data-mode="__GS_MODE__">
+<noscript><p class="noscript">本地控制台需要在浏览器中启用 JavaScript。</p></noscript>
+
+<!-- 无会话标识 / 会话过期时的整页提示 -->
+<div id="session-screen" class="session-screen" hidden>
+  <div class="session-card">
+    <h1 id="session-title" tabindex="-1">无法打开本地控制台</h1>
+    <p id="session-text"></p>
+    <ol class="steps">
+      <li>在 GsController 目录运行 Start-GsController.cmd，按提示确认后控制台会自动打开。</li>
+      <li>如果控制台已在运行，也可以从任务栏托盘图标的菜单选择“打开控制台”。</li>
+    </ol>
+    <button id="session-retry" type="button" class="btn">重试</button>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div id="app" hidden>
+  <header class="topbar">
+    <span class="topbar__brand">GsController 本地控制台</span>
+    <span id="mode-badge" class="badge" hidden></span>
+  </header>
+
+  <div id="demo-banner" class="banner banner--demo" hidden>
+    <p class="banner__text"><strong>演示模式</strong>：这里显示的是示例数据，不会操作这台电脑。</p>
+    <details class="banner__details">
+      <summary>演示场景</summary>
+      <div class="banner__controls">
+        <label class="banner__label" for="scenario-select">切换示例状态：</label>
+        <select id="scenario-select">
+          <option value="needsSetup">需要首次设置</option>
+          <option value="stopped">已停止</option>
+          <option value="ready">就绪</option>
+          <option value="streaming">串流中</option>
+          <option value="error">错误</option>
+        </select>
+        <button id="scenario-apply" type="button" class="btn btn--quiet">应用场景</button>
+      </div>
+    </details>
+  </div>
+
+  <div id="offline-banner" class="banner banner--offline" hidden>
+    <p class="banner__text">暂时无法连接本机的控制台服务。页面会自动重试，也可以手动重试。</p>
+    <button id="offline-retry" type="button" class="btn">重试连接</button>
+  </div>
+
+  <p id="action-notice" class="action-notice" role="status" hidden></p>
+  <div class="layout">
+    <nav id="nav" class="sidenav" aria-label="主导航">
+      <button type="button" class="nav__btn" data-view="overview" aria-current="page">总览</button>
+      <button type="button" class="nav__btn" data-view="setup" id="nav-setup">设置</button>
+      <button type="button" class="nav__btn" data-view="guide">连接指南</button>
+      <button type="button" class="nav__btn" data-view="diagnostics">诊断</button>
+    </nav>
+
+    <main id="main" class="content">
+
+      <!-- 总览 -->
+      <section id="view-overview" class="view" aria-labelledby="overview-title">
+        <h1 id="overview-title" class="visually-hidden" tabindex="-1">总览</h1>
+
+        <div id="hero" class="hero" data-state="loading">
+          <div class="hero__stage" aria-hidden="true">
+            <div class="hero__monitor">
+              <div class="hero__screen"><span class="hero__glow"></span></div>
+              <div class="hero__neck"></div>
+              <div class="hero__foot"></div>
+            </div>
+          </div>
+          <div class="hero__text">
+            <p id="hero-state" class="hero__state">正在连接…</p>
+            <p id="hero-message" class="hero__message"></p>
+            <p id="hero-elapsed" class="hero__elapsed" hidden></p>
+          </div>
+          <div class="hero__footer">
+            <div id="hero-actions" class="hero__actions">
+              <button id="btn-start" type="button" class="btn btn--primary">启动串流</button>
+              <button id="btn-stop" type="button" class="btn btn--danger">停止</button>
+              <button id="btn-more" type="button" class="btn" aria-haspopup="true" aria-expanded="false" aria-controls="more-actions">更多操作</button>
+            </div>
+            <div id="more-actions" class="more-actions" hidden></div>
+          </div>
+        </div>
+
+        <div class="columns">
+          <section class="panel" aria-labelledby="facts-title">
+            <h2 id="facts-title" class="panel__title">当前信息</h2>
+            <dl id="facts-list" class="facts"></dl>
+          </section>
+          <section class="panel" aria-labelledby="next-title">
+            <h2 id="next-title" class="panel__title">下一步</h2>
+            <ul id="next-steps" class="steps"></ul>
+          </section>
+        </div>
+
+        <section id="prereq-panel" class="panel" aria-labelledby="prereq-title" hidden>
+          <h2 id="prereq-title" class="panel__title">部署前检查</h2>
+          <ul id="prereq-list" class="prereq-list"></ul>
+        </section>
+
+        <section id="check-panel" class="panel" aria-labelledby="check-title" hidden>
+          <h2 id="check-title" class="panel__title">检查结果</h2>
+          <p id="check-ready" class="check-ready"></p>
+          <ul id="check-list" class="diag-list"></ul>
+        </section>
+      </section>
+
+      <!-- 设置 / 首次设置 -->
+      <section id="view-setup" class="view" aria-labelledby="setup-title" hidden>
+        <h1 id="setup-title" tabindex="-1">首次设置</h1>
+        <p class="page-intro" id="setup-intro">第一次使用时，先填写显示名称；需要首次部署或更新组件时，再填写安装来源目录。保存设置只记录偏好，不会改动系统、安装文件或正在运行的程序。</p>
+
+        <form id="setup-form" class="form" novalidate>
+          <div class="field">
+            <label for="set-displayName">显示名称</label>
+            <input id="set-displayName" name="displayName" type="text" maxlength="60" autocomplete="off">
+            <p class="field-hint">只在本地控制台里显示的名称；不会更改 Windows 电脑名，也不会更改 Moonlight 里显示的主机名。1–60 个字符。</p>
+            <p class="field-error" id="err-displayName" hidden></p>
+          </div>
+
+          <fieldset class="field-group">
+            <legend>安装来源目录</legend>
+            <p class="field-hint">已部署的实例可以留空；首次部署或更新组件时，需要填写真实存在的来源目录。控制台不会自动猜测默认来源。</p>
+            <div class="field">
+              <label for="set-componentSourceDir">组件来源目录</label>
+              <div class="field-row">
+                <input id="set-componentSourceDir" name="componentSourceDir" type="text" autocomplete="off" spellcheck="false">
+                <button id="btn-browse-component" type="button" class="btn btn--quiet" data-browse="componentSourceDir">浏览…</button>
+              </div>
+              <p class="field-error" id="err-componentSourceDir" hidden></p>
+            </div>
+            <div class="field">
+              <label for="set-helperSourceDir">运行时文件夹</label>
+              <div class="field-row">
+                <input id="set-helperSourceDir" name="helperSourceDir" type="text" autocomplete="off" spellcheck="false">
+                <button id="btn-browse-helper" type="button" class="btn btn--quiet" data-browse="helperSourceDir">浏览…</button>
+              </div>
+              <p class="field-hint">选择已准备的原始运行时包目录，不要选择已经部署的 runtime\bin。</p>
+              <p class="field-error" id="err-helperSourceDir" hidden></p>
+            </div>
+          </fieldset>
+
+          <details class="advanced" id="advanced-settings">
+            <summary>高级设置：目标目录与刷新间隔</summary>
+            <p id="layout-lock-hint" class="field-hint" role="status" hidden>确认串流已停止后，才能修改安装、状态和日志目录。显示名称、来源文件夹和刷新间隔仍可保存。</p>
+            <p class="field-hint">首次部署前需要确认这三个目标目录；已部署实例一般无需改动。</p>
+          <div class="field">
+            <label for="set-installDir">安装目录</label>
+            <input id="set-installDir" name="installDir" type="text" autocomplete="off" spellcheck="false">
+            <p class="field-hint">本机绝对路径，例如 C:\Program Files\GsController。必须是本机磁盘目录。</p>
+            <p class="field-error" id="err-installDir" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="set-stateDir">状态目录</label>
+            <input id="set-stateDir" name="stateDir" type="text" autocomplete="off" spellcheck="false">
+            <p class="field-hint">运行状态数据存放的位置。</p>
+            <p class="field-error" id="err-stateDir" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="set-logDir">日志目录</label>
+            <input id="set-logDir" name="logDir" type="text" autocomplete="off" spellcheck="false">
+            <p class="field-hint">运行日志存放的位置。</p>
+            <p class="field-error" id="err-logDir" hidden></p>
+          </div>
+
+          <div class="field field--narrow">
+            <label for="set-pollIntervalSec">状态刷新间隔（秒）</label>
+            <input id="set-pollIntervalSec" name="pollIntervalSec" type="number" min="1" max="10" step="1" inputmode="numeric">
+            <p class="field-hint">总览页多久自动刷新一次，1–10 秒。</p>
+            <p class="field-error" id="err-pollIntervalSec" hidden></p>
+          </div>
+          </details>
+
+          <div class="form-actions">
+            <button id="btn-save" type="submit" class="btn btn--primary">保存设置</button>
+            <button id="btn-revert" type="button" class="btn btn--quiet" hidden>放弃更改</button>
+            <span id="form-status" class="form-status" role="status"></span>
+          </div>
+          <p class="form-note">开机自启是单独的确认操作：在总览的“更多操作”里开启或关闭；保存设置不会改动它，也不会部署或移动任何文件。</p>
+        </form>
+
+        <details class="advanced">
+          <summary>路径规则说明</summary>
+          <ul class="steps">
+            <li>三个目标目录（安装、状态、日志）必须互相分开，且不能是盘符根目录、系统目录或 Windows 目录。</li>
+            <li>只支持本机磁盘路径，不支持网络路径（UNC）和相对路径。</li>
+            <li>保存设置只记录偏好；实际安装要在“更多操作”里明确执行“部署安装”。</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- 连接指南 -->
+      <section id="view-guide" class="view" aria-labelledby="guide-title" hidden>
+        <h1 id="guide-title" tabindex="-1">连接指南</h1>
+        <p class="page-intro">已完成配对的客户端可在主机就绪后连接。首次配对还需要主机端确认入口；当前版本尚未提供该入口。</p>
+
+        <section class="panel" aria-labelledby="addr-title">
+          <h2 id="addr-title" class="panel__title">这台电脑的局域网地址</h2>
+          <ul id="address-list" class="addr-list"></ul>
+          <p id="guide-empty" class="empty-note" hidden>还没有可用的局域网地址。完成部署并启动后，这里会显示地址。</p>
+        </section>
+
+        <section class="panel" aria-labelledby="steps-title">
+          <h2 id="steps-title" class="panel__title">连接步骤</h2>
+          <ol class="steps steps--numbered">
+            <li>在总览确认这台电脑已处于“就绪”或“串流中”。</li>
+            <li>在客户端设备上安装 Moonlight（moonlight-stream.org 提供各平台版本）。</li>
+            <li>在 Moonlight 里选择“手动添加主机”，输入上面的局域网地址。</li>
+            <li>首次连接前，需要运行时供应方提供并验证主机端的配对确认方式。本控制台不能输入 PIN；若没有主机端确认入口，请先停止配对尝试，不能仅凭客户端显示的配对码完成。</li>
+            <li>从 Moonlight 的列表选择要串流的桌面或游戏开始连接。</li>
+          </ol>
+        </section>
+
+        <section class="panel" aria-labelledby="client-title">
+          <h2 id="client-title" class="panel__title">Moonlight 客户端设置建议</h2>
+          <ul class="steps">
+            <li>分辨率和帧率：在 Moonlight 的设置里按客户端设备能力选择；同一局域网一般不需要改动高级选项。</li>
+            <li>码率：默认值即可流畅使用；如果画面不流畅，优先检查客户端与这台电脑是否在同一局域网。</li>
+            <li>串流画质的具体参数在 Moonlight 客户端侧设置，本控制台不管理客户端参数。</li>
+          </ul>
+        </section>
+      </section>
+
+      <!-- 诊断 -->
+      <section id="view-diagnostics" class="view" aria-labelledby="diag-title" hidden>
+        <h1 id="diag-title" tabindex="-1">诊断</h1>
+        <p class="page-intro">按需运行受限的检查，并显示结果摘要。这里不会生成完整的支持包，也不会上传任何数据。</p>
+
+        <div class="diag-actions">
+          <button id="btn-diagnose" type="button" class="btn btn--primary">运行诊断检查</button>
+          <span id="diag-status" class="form-status" role="status"></span>
+        </div>
+
+        <section id="diag-panel" class="panel" aria-labelledby="diag-result-title" hidden>
+          <h2 id="diag-result-title" class="panel__title">检查摘要</h2>
+          <ul id="diag-summary" class="diag-list"></ul>
+          <div class="diag-export">
+            <button id="btn-diag-download" type="button" class="btn btn--quiet">下载摘要（JSON）</button>
+            <p class="field-hint">摘要只包含受限的检查结果，不含日志原文、凭据或个人文件。</p>
+          </div>
+        </section>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="live-region" class="visually-hidden" aria-live="polite"></div>
+</div>
+
+<!-- 通用确认对话框 -->
+<dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title">
+  <form id="confirm-form" method="dialog">
+    <h2 id="confirm-title" class="dialog__title"></h2>
+    <p id="confirm-text" class="dialog__text"></p>
+    <div id="confirm-details" class="dialog__details" hidden></div>
+    <div class="dialog__actions">
+      <button id="confirm-cancel" type="submit" value="cancel" class="btn">取消</button>
+      <button id="confirm-ok" type="submit" value="confirm" class="btn btn--primary"></button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/gs-console.js"></script>
+</body>
+</html>

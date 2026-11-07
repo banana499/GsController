@@ -385,7 +385,7 @@ if ($toolsFound.Count -ne 3) {
                             [System.Runtime.InteropServices.Marshal]::ReleaseComObject($record) | Out-Null
                             $rows += , $row
                         }
-                        return , @($rows)
+                        return @($rows)
                     } finally {
                         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($view) | Out-Null
                     }
@@ -398,7 +398,7 @@ if ($toolsFound.Count -ne 3) {
         }
 
         Invoke-Test 'MSI database: both actions linked with type 34 deferred no-impersonate continue-on-error' {
-            $rows = Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`' -Columns 4
+            $rows = @(Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`' -Columns 4)
             $byAction = @{}
             foreach ($row in $rows) { $byAction[$row[0]] = $row }
             Assert-True $byAction.ContainsKey($script:PrepareActionId) 'GsPrepareUninstall row exists in the CustomAction table (linked into the final database)'
@@ -418,7 +418,7 @@ if ($toolsFound.Count -ne 3) {
         }
 
         Invoke-Test 'MSI database: command lines keep the explicit system paths, the -File call and the task fallback' {
-            $rows = Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Target` FROM `CustomAction`' -Columns 2
+            $rows = @(Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Target` FROM `CustomAction`' -Columns 2)
             $byAction = @{}
             foreach ($row in $rows) { $byAction[$row[0]] = $row }
             $prepareTarget = $byAction[$script:PrepareActionId][1]
@@ -437,7 +437,7 @@ if ($toolsFound.Count -ne 3) {
         }
 
         Invoke-Test 'MSI database: execution sequence conditions and order against InstallInitialize/RemoveFiles' {
-            $rows = Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Condition`, `Sequence` FROM `InstallExecuteSequence`' -Columns 3
+            $rows = @(Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action`, `Condition`, `Sequence` FROM `InstallExecuteSequence`' -Columns 3)
             $byAction = @{}
             foreach ($row in $rows) { $byAction[$row[0]] = $row }
             Assert-True $byAction.ContainsKey($script:PrepareActionId) 'GsPrepareUninstall sequenced in InstallExecuteSequence'
@@ -458,14 +458,14 @@ if ($toolsFound.Count -ne 3) {
         }
 
         Invoke-Test 'MSI database: deferred cleanup actions are absent from InstallUISequence' {
-            $rows = Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action` FROM `InstallUISequence`' -Columns 1
+            $rows = @(Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `Action` FROM `InstallUISequence`' -Columns 1)
             foreach ($row in $rows) {
                 Assert-True (($row[0] -ne $script:PrepareActionId) -and ($row[0] -ne $script:TaskActionId)) ('deferred cleanup must not run in the UI sequence: ' + $row[0])
             }
         }
 
         Invoke-Test 'MSI database: upgrade detection is wired for the fixed UpgradeCode' {
-            $rows = Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `UpgradeCode`, `ActionProperty` FROM `Upgrade`' -Columns 2
+            $rows = @(Get-MsiDatabaseRows -MsiPath $script:MsiPath -Sql 'SELECT `UpgradeCode`, `ActionProperty` FROM `Upgrade`' -Columns 2)
             Assert-True ($rows.Count -ge 1) 'the Upgrade table has at least one row (MajorUpgrade detection)'
             Assert-Equal '{3B7F2C64-9A1D-4E58-8C2B-6D5A0F7E4B19}' ($rows[0][0].ToUpperInvariant()) 'the upgrade detection uses the fixed UpgradeCode from the wxs'
         }

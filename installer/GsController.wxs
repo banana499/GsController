@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?ifndef GsInstallProfile ?>
+  <?define GsInstallProfile = "Legacy" ?>
+  <?endif?>
   <Product Id="*" Name="GsController" Language="2052" Version="$(var.Version)" Manufacturer="Local Development" UpgradeCode="3B7F2C64-9A1D-4E58-8C2B-6D5A0F7E4B19">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" />
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
@@ -8,10 +11,12 @@
       <ComponentGroupRef Id="ProductFiles" />
     </Feature>
     <!--
-      Full-uninstall cleanup (docs/msi-uninstall-cleanup.md).
-      Both custom actions are declared INSIDE the Product element so they
-      are always linked into the final database; a Fragment copy would
-      need an explicit reference to survive linking.
+      Full-uninstall cleanup (docs/msi-uninstall-cleanup.md) - LEGACY
+      PROFILE ONLY. Compiled out entirely for -dGsInstallProfile=Sunshine:
+      a Sunshine MSI must not touch the legacy scheduled task or any
+      external Sunshine installation when GsController is uninstalled, so
+      neither custom action (and neither sequence entry) exists there. The
+      Legacy profile keeps the exact wiring below.
 
       GsPrepareUninstall: graceful stop + scheduled-task removal via the
       deployed CLI (-File reference only, never an ad-hoc -Command
@@ -25,6 +30,7 @@
       keeps the old product's removal during a major upgrade out, so the
       upgraded product keeps reusing the same scheduled task.
     -->
+    <?if $(var.GsInstallProfile) = "Legacy" ?>
     <CustomAction Id="GsPrepareUninstall"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]gs-product.ps1&quot; -Action PrepareUninstall"
@@ -37,6 +43,7 @@
       <Custom Action="GsPrepareUninstall" Before="GsRemoveSupervisorTask">REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE</Custom>
       <Custom Action="GsRemoveSupervisorTask" Before="RemoveFiles">REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
+    <?endif?>
   </Product>
   <Fragment>
     <Directory Id="TARGETDIR" Name="SourceDir">
@@ -50,6 +57,17 @@
            link time. This working-directory property can point to
            SysWOW64; the executable uses an explicit System32 path above. -->
       <Directory Id="SystemFolder" />
+      <!-- Start menu root (standard Windows Installer directory, resolved
+           from the standard property). Declared so the advertised shortcut
+           attached by installer\GsConsoleShortcut.xsl to the harvested
+           gs-console.vbs component has a resolvable Directory foreign key.
+           No component and no new directory live here: the per-machine
+           GsController entry is placed directly in the start menu, so
+           uninstall removes it with its component and there is nothing
+           extra to clean (ICE38 would additionally demand an HKCU registry
+           keypath for any component inside a profile directory, and the
+           product intentionally creates no registry entries). -->
+      <Directory Id="ProgramMenuFolder" Name="ProgramMenuFolder" />
     </Directory>
   </Fragment>
 </Wix>

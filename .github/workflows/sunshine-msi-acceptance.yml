@@ -1,0 +1,146 @@
+# Isolated real-install acceptance for the GsController Sunshine MSI.
+#
+# Everything real happens inside the pinned GitHub-hosted windows-2022
+# runner: build the Sunshine MSIs locally in the runner, then run
+# install / verify / repair / upgrade / uninstall through msiexec with the
+# gated harness (tests\Invoke-SunshineInstallAcceptance.ps1). No Sunshine
+# installer is downloaded, no account/PIN/certificate/GPU/streaming checks
+# run; nothing here claims Windows 11 desktop or streaming acceptance.
+#
+# The existing windows-tests.yml keeps its safe defaults; this workflow is
+# independent. The WiX3 binaries zip is fetched from the OFFICIAL
+# wixtoolset release URL and verified against the SHA256 that was computed
+# by this project from a download of that URL (the official API digest for
+# this asset is null, so there is no upstream-published hash to cite).
+name: sunshine-msi-acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    # Fork pull requests are rejected: only same-repo branches may drive
+    # the real-install acceptance.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      GS_WIX_ZIP_URL: 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip'
+      GS_WIX_ZIP_SHA256: '6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31'
+    steps:
+      - name: Confirm the GitHub-hosted runner environment first
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+            throw "RUNNER_ENVIRONMENT is '$($env:RUNNER_ENVIRONMENT)', expected 'github-hosted'; refusing to download, build or install."
+          }
+          if ($env:RUNNER_OS -ne 'Windows') {
+            throw "RUNNER_OS is '$($env:RUNNER_OS)', expected 'Windows'."
+          }
+          Write-Host 'GitHub-hosted Windows runner confirmed; downloads, builds and installs may proceed.'
+
+      - name: Reject fork pull requests
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        shell: pwsh
+        run: |
+          Write-Host 'Fork pull requests must not run the real-install acceptance.'
+          exit 1
+
+      - name: Checkout (no retained credentials)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch the pinned WiX toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # One unique acceptance root below RUNNER_TEMP, partitioned into
+          # downloads / tools / msi / manifests / logs / console-private.
+          # Verify the WiX hash BEFORE any extraction, and never run an
+          # interpreter from the download tree.
+          $root = Join-Path $env:RUNNER_TEMP ('gs-acceptance-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path "$root\downloads", "$root\tools", "$root\msi", "$root\manifests", "$root\logs" | Out-Null
+          "GS_ACCEPTANCE_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Invoke-WebRequest -Uri $env:GS_WIX_ZIP_URL -OutFile "$root\downloads\wix314.zip"
+          $actual = (Get-FileHash "$root\downloads\wix314.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:GS_WIX_ZIP_SHA256.ToLowerInvariant()) {
+            throw "WiX zip SHA256 mismatch: $actual"
+          }
+          Expand-Archive "$root\downloads\wix314.zip" -DestinationPath "$root\tools\wix314"
+
+      - name: Build the Sunshine MSIs (0.3.0 and 0.3.1) with stage manifests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GS_ACCEPTANCE_ROOT
+          if ([string]::IsNullOrWhiteSpace($root)) { throw 'Acceptance root was not created.' }
+          $candle = Get-ChildItem "$root\tools\wix314" -Recurse -Filter candle.exe | Select-Object -First 1
+          if ($null -eq $candle) { throw 'candle.exe not found in the pinned WiX zip' }
+          $wixDir = $candle.DirectoryName
+          foreach ($version in @('0.3.0', '0.3.1')) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-product.ps1 `
+              -Version $version -RuntimeProfile Sunshine -WixDir $wixDir `
+              -OutputDirectory "$root\msi"
+            if ($LASTEXITCODE -ne 0) { throw "build-product.ps1 failed for version $version" }
+            # Capture the staged-file manifest (relative path + SHA256) the
+            # harness verifies against the installed payload.
+            $stage = (Resolve-Path 'artifacts\product-stage').Path
+            $rows = @()
+            Get-ChildItem -LiteralPath $stage -Recurse -File | ForEach-Object {
+              $rows += [pscustomobject]@{
+                relativePath = $_.FullName.Substring($stage.Length + 1)
+                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              }
+            }
+            $rows | ConvertTo-Json | Set-Content -LiteralPath "$root\manifests\manifest-$version.json" -Encoding UTF8
+          }
+
+      - name: Run the gated real-install acceptance
+        shell: powershell
+        run: |
+          $root = $env:GS_ACCEPTANCE_ROOT
+          if ([string]::IsNullOrWhiteSpace($root)) { throw 'Acceptance root was not created.' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests\Invoke-SunshineInstallAcceptance.ps1 `
+            -Execute -Version030 0.3.0 -Version031 0.3.1 `
+            -Msi03 "$root\msi\GsController-Sunshine-0.3.0.msi" `
+            -Msi031 "$root\msi\GsController-Sunshine-0.3.1.msi" `
+            -Manifest030 "$root\manifests\manifest-0.3.0.json" `
+            -Manifest031 "$root\manifests\manifest-0.3.1.json" `
+            -JsonOut "$root\acceptance-result.json" `
+            -LogDirectory "$root\logs"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'The acceptance reported a failure (see the uploaded JSON and MSI logs).'
+            exit 1
+          }
+
+      - name: Collect acceptance artifacts
+        if: always() && env.GS_ACCEPTANCE_ROOT != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # ONLY the concise result JSON and the msiexec *.log files are
+          # uploaded. Console stdout/stderr (which can contain the session
+          # token) live in a separate private subfolder and stay local.
+          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE\acceptance-artifacts" -Force | Out-Null
+          $root = $env:GS_ACCEPTANCE_ROOT
+          if ([string]::IsNullOrWhiteSpace($root)) { throw 'Acceptance root was not created.' }
+          if (Test-Path "$root\acceptance-result.json") {
+            Copy-Item "$root\acceptance-result.json" "$env:GITHUB_WORKSPACE\acceptance-artifacts\"
+          }
+          if (Test-Path "$root\logs") {
+            Copy-Item "$root\logs\*.log" "$env:GITHUB_WORKSPACE\acceptance-artifacts\" -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload acceptance JSON and MSI logs
+        if: always() && env.GS_ACCEPTANCE_ROOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sunshine-msi-acceptance
+          path: acceptance-artifacts/
+          if-no-files-found: warn

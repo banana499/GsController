@@ -22,6 +22,27 @@ see [release-readiness.md](release-readiness.md).
 
 ## Build
 
+### Sunshine profile
+
+This profile packages the GsController guide and local read-only checks. Sunshine
+is obtained and installed separately from its official release; no private runtime
+bundle or NVIDIA component tree is needed to build this profile.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-product.ps1 `
+  -Version 0.3.0 `
+  -RuntimeProfile Sunshine `
+  -WixDir 'D:\Build Tools\WiX 3.14\bin'
+```
+
+The output is `GsController-Sunshine-<version>.msi`. Do not supply
+`-RuntimeBundleDir` with this profile. The installed Start Menu entry opens the
+Sunshine guide through the generated `gs-install-profile.json`. This MSI excludes
+the Legacy uninstall cleanup actions; Sunshine and its pairing state remain
+managed by its own installer. See [sunshine-quickstart.md](sunshine-quickstart.md).
+
+### Legacy profile (default)
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-product.ps1 `
   -Version 0.2.0 `
@@ -38,10 +59,30 @@ compatibility or replace installation acceptance.
 The script:
 
 1. stages `src/GsControl`, `src/GsLifecycle`, `src/GsRuntime`;
-2. copies the prebuilt runtime bundle into `bin/`;
-3. copies every top-level file from `product/`, including CLI, tray, diagnostics and support tools, plus root `LICENSE` and `LICENSING.md` (both required before cleanup);
-4. runs `heat.exe`, `candle.exe`, and `light.exe`;
-5. writes `artifacts/msi/GsController-<version>.msi`.
+2. for Legacy, checks all 13 public runtime filenames and copies the prebuilt bundle into `bin/`; Sunshine omits this input and directory;
+3. copies every top-level file from `product/`, including CLI, tray, local console, diagnostics and support tools, plus root `LICENSE` and `LICENSING.md`; the license files and all seven console files are required before cleanup;
+4. generates `gs-install-profile.json`, then runs `heat.exe` with the controlled Start Menu shortcut transform, `candle.exe`, and `light.exe`;
+5. writes `artifacts/msi/GsController-<version>.msi` for Legacy or `GsController-Sunshine-<version>.msi` for Sunshine.
+
+The required console files are `gs-console.ps1`, `gs-console-action.ps1`,
+`gs-console.vbs`, `gs-console.html`, `gs-console.css`, `gs-console.js` and
+`gs-console-strings.zh-CN.json`. The existing `gs-tray-model.ps1` is also
+required because the console loads it during startup. A missing file (or a
+directory in its place) rejects both a full build and `-PreflightOnly` before
+existing build directories are touched. The metadata-only Build prerequisite
+check requires the same console inputs; Source mode keeps its CLI-only scope. The installed entry is `gs-console.vbs` next to `gs-product.ps1`;
+the root `Start-GsController.cmd` is only the source-checkout entry.
+
+Sunshine additionally requires `gs-sunshine.ps1`, `gs-sunshine.html`,
+`gs-sunshine.js` and `gs-sunshine.css`. The generated profile cannot be replaced
+by a same-named product source file.
+
+`tests/Invoke-ConsolePackagingTests.ps1` uses synthetic inputs and fake WiX tools
+under TEMP to check early rejection and staging. Its fake MSI is not an
+installable artifact. `tests/Invoke-ConsoleShortcutMsiTests.ps1` separately uses
+real WiX and read-only MSI database queries to check both profiles, the advertised
+Start Menu shortcut and removal of Legacy cleanup from the Sunshine profile.
+Neither suite runs an installer or verifies a real installed shortcut.
 
 The repository does not compile runtime helpers or inspect their source.
 `-sreg` is used during harvesting so DLLs are not treated as SelfReg.

@@ -1,6 +1,6 @@
 # GsController 运维手册
 
-更新时间：2026-11-01。本手册面向操作者：从零安装、部署、日常启停、诊断、恢复卡住的会话，到升级、回退和卸载。术语与路径的完整清单见 [文件与日志位置](file-locations.md)；出问题先查 [故障排查](troubleshooting.md)。
+本手册描述 **Legacy 旧运行时** 的安装、部署、启停、诊断、恢复、升级与卸载。新增 Sunshine 配置使用独立的 [Sunshine 首次使用流程](sunshine-quickstart.md)，不执行本页的组件部署、自启任务或 PrepareUninstall 操作。术语与路径的完整清单见 [文件与日志位置](file-locations.md)；出问题先查 [故障排查](troubleshooting.md)。
 
 > 约定：下文用 `<安装目录>` 指默认安装目录 `C:\Program Files\Local Development\GsController`，用 `<StateDir>` 指 `%ProgramData%\Local Development\GsController`，用 `<LogDir>` 指 `%ProgramData%\Local Development\GsControllerLogs`，用 `<主机IP>` / `<客户端IP>` 指局域网地址。命令都在 Windows PowerShell 5.1 里运行。
 
@@ -253,7 +253,7 @@ msiexec /x C:\path\to\GsController-<版本>.msi /qn
 
 ## 客户端连接
 
-配对和首次连接的完整步骤以 [remote-client-test.md](remote-client-test.md) 为准（含主机侧取证命令）；这里只列两类已验证/在册的客户端。不要把客户端的配对数据、证书或私钥复制出设备。
+当前产品没有可用于新客户端首次配对的主机端确认入口，公开运行时契约也尚未提供配对调用方式。因此首次安装到首次配对仍是交付阻塞，不能只让用户在 Moonlight 中反复输入或重试 PIN。[remote-client-test.md](remote-client-test.md) 是**已配对客户端**的串流验收指南，不包含完整首次配对流程；所需接口和验收条件见 [首次配对交付条件](first-pairing-readiness.md)。这里只列两类历史已验证/在册的客户端。不要把客户端的配对数据、证书或私钥复制出设备。
 
 - **MacBook 客户端**：Moonlight 6.2.0，支持命令行参数，例如：
   ```bash

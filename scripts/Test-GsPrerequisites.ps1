@@ -12,6 +12,12 @@
     Test seam returning IsWindows (bool), Architecture, Is64BitProcess (bool),
     PowerShellVersion and PSEdition. Results identify simulated environments.
     Do not use this parameter for an operator's real prerequisite check.
+.PARAMETER DefineOnly
+    Only defines the script's functions (including the shared public bundle
+    file-name contract) and returns immediately. No check runs, no path is
+    inspected and no output is produced. Dot-sourcing with this switch lets
+    scripts\build-product.ps1 reuse Get-GsPublicBundleFileNames without
+    duplicating the list.
 #>
 [CmdletBinding()]
 param(
@@ -20,8 +26,32 @@ param(
     [string]$ComponentSourceDir = '',
     [string]$WixDir = '',
     [ValidateSet('Source', 'Build')][string]$Mode = 'Source',
-    [scriptblock]$EnvironmentProbe
+    # Must agree with the build profile: Legacy (default) requires the
+    # runtime bundle in Build mode; Sunshine never requires, enumerates or
+    # reads it, and an explicitly supplied -RuntimeBundleDir is a
+    # contradictory input.
+    [ValidateSet('Legacy', 'Sunshine')][string]$RuntimeProfile = 'Legacy',
+    [scriptblock]$EnvironmentProbe,
+    [switch]$DefineOnly
 )
+
+# Single shared list of the public runtime bundle file names. Both this
+# checker's Build mode and scripts\build-product.ps1 require exactly these
+# names. Presence is a metadata completeness gate only; it never establishes
+# authenticity, compatibility, licensing or runnability of the runtime,
+# which stays an external, opaque dependency.
+function Get-GsPublicBundleFileNames {
+    return @(
+        'gs_start_private.ps1', 'gs_stop_private.ps1', 'gs_start_with_hook.ps1',
+        'gs_supervisor.ps1', 'gs_grant_pipe_acl.ps1', 'gs_process_identity.ps1',
+        'gs_launcher.py', 'inject_nvstreamer.py', 'patch_applist_mem.py',
+        'gs_nsc_supported.py', 'gs_mdns_probe.py',
+        'NvStreamerBusHook.dll', 'GsStreamGuard.dll'
+    )
+}
+
+if ($DefineOnly) { return }
+
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $checks = New-Object 'System.Collections.Generic.List[object]'
@@ -129,40 +159,79 @@ if ($null -ne $repo) {
         }
     }
     if ($Mode -eq 'Build') {
+        # The product build rejects an incomplete local console set, so a
+        # build-mode prerequisite check must flag the same seven files.
+        $sourceFiles += @('product/gs-console.ps1', 'product/gs-console-action.ps1',
+            'product/gs-console.vbs', 'product/gs-console.html', 'product/gs-console.css',
+            'product/gs-console.js', 'product/gs-console-strings.zh-CN.json')
+        # gs-console.ps1 dot-sources gs-tray-model.ps1 unconditionally at
+        # startup; it is an independent build dependency, not part of the
+        # console file set.
+        $sourceFiles += 'product/gs-tray-model.ps1'
+        if ($RuntimeProfile -eq 'Sunshine') {
+            # Sunshine-profile build (frontend resource list confirmed by
+            # worker B): the backend plus the three page assets must all be
+            # present; gs-sunshine.css builds on the shared gs-console.css.
+            $sourceFiles += @('product/gs-sunshine.ps1', 'product/gs-sunshine.html',
+                'product/gs-sunshine.js', 'product/gs-sunshine.css')
+        }
         $sourceFiles += @('scripts/build-product.ps1', 'scripts/GsBuildPreflight.ps1',
-            'installer/GsController.wxs', 'LICENSE', 'LICENSING.md')
+            'scripts/Test-GsPrerequisites.ps1',
+            'installer/GsController.wxs', 'installer/GsConsoleShortcut.xsl',
+            'LICENSE', 'LICENSING.md')
     }
     foreach ($relative in $sourceFiles) {
         $null = Test-InputPath ('Source:' + $relative) (Join-Path $repo $relative) $true 'Leaf' 'Restore the missing source file from the intended repository revision.'
     }
 }
 
-$runtimeRequired = ($Mode -eq 'Build' -or -not [string]::IsNullOrWhiteSpace($RuntimeBundleDir))
-$runtime = Test-InputPath 'RuntimeBundleDir' $RuntimeBundleDir $runtimeRequired -NextStep 'For streaming/builds, obtain a lawful compatible runtime from its supplier and pass -RuntimeBundleDir explicitly. No public download is documented.'
-if ($null -ne $runtime) {
-    # Public filename contract: GsRuntime.psm1 BundleHelpers and the two DLLs
-    # required by Install-GsRuntimeBundle. Never read or execute these files.
-    $runtimeFiles = @(
-        'gs_start_private.ps1', 'gs_stop_private.ps1', 'gs_start_with_hook.ps1',
-        'gs_supervisor.ps1', 'gs_grant_pipe_acl.ps1', 'gs_process_identity.ps1',
-        'gs_launcher.py', 'inject_nvstreamer.py', 'patch_applist_mem.py',
-        'gs_nsc_supported.py', 'gs_mdns_probe.py',
-        'NvStreamerBusHook.dll', 'GsStreamGuard.dll'
-    )
-    foreach ($name in $runtimeFiles) {
-        $null = Test-InputPath ('Runtime:' + $name) (Join-Path $runtime $name) $true 'Leaf' 'Ask the runtime supplier for the complete compatible bundle; do not substitute mock files.'
+# Sunshine profile agreement: Sunshine consumes neither the private runtime
+# bundle nor the NVIDIA self-provided component tree. An explicitly supplied
+# legacy dependency contradicts the profile and is refused with a structured
+# error - never probed, never silently checked. Without them the two inputs
+# are reported as NotRequired with an empty NextStep (no preparation
+# advice). Source mode keeps its original semantics under the default
+# Legacy profile.
+$sunshineProfile = ($RuntimeProfile -eq 'Sunshine')
+if ($sunshineProfile) {
+    foreach ($legacyDependency in @(
+            @{ Name = 'RuntimeBundleDir'; Value = $RuntimeBundleDir; What = 'runtime bundle' },
+            @{ Name = 'ComponentSourceDir'; Value = $ComponentSourceDir; What = 'self-provided component tree' })) {
+        if (-not [string]::IsNullOrWhiteSpace($legacyDependency.Value)) {
+            Add-Check $legacyDependency.Name 'InvalidPath' $true $legacyDependency.Value `
+                ('The Sunshine profile does not consume the private {0}; supplying it contradicts the profile.' -f $legacyDependency.What) `
+                'Remove the parameter, or select -RuntimeProfile Legacy.'
+        }
     }
-}
+    $contradictions = @($checks | Where-Object {
+        ($_.Name -eq 'RuntimeBundleDir' -or $_.Name -eq 'ComponentSourceDir') -and $_.Status -eq 'InvalidPath'
+    })
+    if ($contradictions.Count -eq 0) {
+        Add-Check 'RuntimeBundleDir' 'NotRequired' $false '' 'Sunshine profile: no private runtime bundle is consumed.' ''
+        Add-Check 'ComponentSourceDir' 'NotRequired' $false '' 'Sunshine profile: no self-provided component tree is consumed.' ''
+    }
+} else {
+    $runtimeRequired = ($Mode -eq 'Build' -or -not [string]::IsNullOrWhiteSpace($RuntimeBundleDir))
+    $runtime = Test-InputPath 'RuntimeBundleDir' $RuntimeBundleDir $runtimeRequired -NextStep 'For streaming/builds, obtain a lawful compatible runtime from its supplier and pass -RuntimeBundleDir explicitly. No public download is documented.'
+    if ($null -ne $runtime) {
+        # Public filename contract: GsRuntime.psm1 BundleHelpers and the two DLLs
+        # required by Install-GsRuntimeBundle. Never read or execute these files.
+        # The list is the shared Get-GsPublicBundleFileNames contract.
+        foreach ($name in (Get-GsPublicBundleFileNames)) {
+            $null = Test-InputPath ('Runtime:' + $name) (Join-Path $runtime $name) $true 'Leaf' 'Ask the runtime supplier for the complete compatible bundle; do not substitute mock files.'
+        }
+    }
 
-$componentsRequired = -not [string]::IsNullOrWhiteSpace($ComponentSourceDir)
-$components = Test-InputPath 'ComponentSourceDir' $ComponentSourceDir $componentsRequired -NextStep 'Before deployment, supply your own lawfully obtained component tree with -ComponentSourceDir.'
-if ($null -ne $components) {
-    # Public component catalog layout only. No recursive enumeration or hashing.
-    foreach ($relative in @('NvContainer/NvContainer.exe', 'GSRoot/LocalSystem/NvMessageBusBroadcast.dll.disabled')) {
-        $null = Test-InputPath ('Component:' + $relative) (Join-Path $components $relative) $true 'Leaf' 'Supply the component tree expected by New-GsComponentCatalog; review its license separately.'
-    }
-    foreach ($relative in @('GSRoot/LocalSystem', 'GSRoot/NetworkService', 'NvStreamSrv/Plugins/SSAU')) {
-        $null = Test-InputPath ('Component:' + $relative) (Join-Path $components $relative) $true 'Container' 'Supply the component tree expected by New-GsComponentCatalog; review its license separately.'
+    $componentsRequired = -not [string]::IsNullOrWhiteSpace($ComponentSourceDir)
+    $components = Test-InputPath 'ComponentSourceDir' $ComponentSourceDir $componentsRequired -NextStep 'Before deployment, supply your own lawfully obtained component tree with -ComponentSourceDir.'
+    if ($null -ne $components) {
+        # Public component catalog layout only. No recursive enumeration or hashing.
+        foreach ($relative in @('NvContainer/NvContainer.exe', 'GSRoot/LocalSystem/NvMessageBusBroadcast.dll.disabled')) {
+            $null = Test-InputPath ('Component:' + $relative) (Join-Path $components $relative) $true 'Leaf' 'Supply the component tree expected by New-GsComponentCatalog; review its license separately.'
+        }
+        foreach ($relative in @('GSRoot/LocalSystem', 'GSRoot/NetworkService', 'NvStreamSrv/Plugins/SSAU')) {
+            $null = Test-InputPath ('Component:' + $relative) (Join-Path $components $relative) $true 'Container' 'Supply the component tree expected by New-GsComponentCatalog; review its license separately.'
+        }
     }
 }
 

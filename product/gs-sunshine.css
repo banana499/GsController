@@ -1,0 +1,97 @@
+/* GsController Sunshine 引导页 — 增量样式。
+   只补充 Sunshine 页面专属布局;颜色、字体、按钮、徽标、状态徽章与
+   焦点样式全部复用 gs-console.css 的 tokens 与组件类(需先加载基础样式)。
+   无外部资源、无动画。 */
+
+.sun-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 28px 64px;
+}
+
+.sun-session {
+  max-width: 560px;
+  margin: 24px auto 0;
+}
+
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.sun-steps {
+  list-style: none;
+  margin: 22px 0 30px;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.sun-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 18px;
+  align-items: start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+}
+
+.sun-step__num {
+  width: 36px;
+  height: 36px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #FFFFFF;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sun-step__body h2 {
+  margin: 2px 0 8px;
+  font-size: 19px;
+}
+
+.sun-step__body p {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+}
+
+.sun-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+/* 键盘焦点:与基础样式的 .btn:focus-visible 一致,显式覆盖引导卡内的链接 */
+.sun-steps a:focus-visible,
+.sun-status a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 手机/窄窗口:与基础样式的 600px 断点一致(适配 375px) */
+@media (max-width: 600px) {
+  .sun-main { padding: 14px 16px 40px; }
+
+  .sun-session { margin: 14px 16px 0; max-width: none; }
+
+  .sun-step { padding: 16px; gap: 4px 12px; }
+
+  .sun-step__num { width: 32px; height: 32px; font-size: 16px; }
+
+  .sun-step__body h2 { font-size: 18px; }
+
+  .sun-status { flex-direction: column; align-items: stretch; }
+
+  .sun-status .btn { width: 100%; }
+}

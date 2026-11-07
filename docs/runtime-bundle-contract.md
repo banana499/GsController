@@ -1,15 +1,21 @@
 # Runtime Bundle Contract
 
-The runtime bundle is a separately supplied, opaque dependency. This document
-defines the interface the product layer relies on; it does not describe the
-bundle's implementation.
+The Legacy runtime bundle is a separately supplied, opaque dependency. This
+document defines the interface the Legacy product layer relies on; it does not
+describe the bundle's implementation. The Sunshine build profile does not consume
+this bundle; see [sunshine-quickstart.md](sunshine-quickstart.md).
 
 ## Inputs
 
 - Directory: any path passed as `-RuntimeBundleDir` to
   `scripts/build-product.ps1`.
-- The directory must contain at least one non-documentation file.
-- The build copies every non-documentation file into the MSI `bin/` directory.
+- For `-RuntimeProfile Legacy` (the default), the directory must contain all 11
+  public helper files and both required DLLs. The shared build/checker list is
+  `Get-GsPublicBundleFileNames` in `scripts/Test-GsPrerequisites.ps1`.
+- The Legacy build copies every non-documentation file into the MSI `bin/`
+  directory; the caller remains responsible for the complete input contents.
+- `-RuntimeProfile Sunshine` refuses an explicitly supplied `-RuntimeBundleDir`,
+  does not inspect the default bundle directory and produces no runtime `bin/`.
 
 ## Required behavior
 
@@ -30,9 +36,9 @@ that list in sync when releasing a new runtime version.
 `scripts/build-product.ps1` checks:
 
 - the bundle directory exists;
-- it contains at least one non-documentation file;
+- for Legacy, every required public helper/DLL exists as a file; missing files are reported before any cleanup or staging;
 - WiX tools are present;
-- product modules, product entry, build helper and the root `LICENSE` / `LICENSING.md` inputs exist;
+- product modules, product entry, required console assets, build helpers, shortcut transform and root `LICENSE` / `LICENSING.md` inputs exist; Sunshine also requires its backend and page resources;
 - the version fits MSI ProductVersion limits;
 - source, staging and output paths pass the overlap and reparse checks described
   in [build-preflight.md](build-preflight.md).

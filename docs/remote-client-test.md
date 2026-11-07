@@ -1,5 +1,10 @@
 # Second-Client Acceptance Guide
 
+This guide verifies streaming with an **already-paired client**. It does not
+provide a first-pairing procedure. The product currently has no verified host-side
+pairing entry point; see [first-pairing-readiness.md](first-pairing-readiness.md).
+A historical fixed-PIN test is not an onboarding method for a new installation.
+
 ## Prerequisites
 
 - Host: Windows 11, product installed, `gs-product.ps1` available, LAN
@@ -7,8 +12,9 @@
   withheld from the public repository).
 - Client: same LAN, Moonlight 6.2.0.
 - Client can reach `http://<host-ip>:47989/serverinfo` and gets HTTP 200.
-- Client is paired with the host using a fixed PIN. Do not rely on a random GUI
-  PIN race.
+- Client is already paired with this host through a documented, compatible
+  host-side flow. This guide does not create pairing state or establish that a
+  fresh installation can pair.
 
 ## 1. Start the host product
 

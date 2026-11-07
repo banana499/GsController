@@ -1,0 +1,20 @@
+{
+  "tooltip.prefix": "GsController 本地控制台",
+  "tray.open": "打开控制台",
+  "tray.exit": "退出",
+  "balloon.busy": "有操作正在进行，暂时无法退出",
+  "tray.listenerDenied": "无法监听本机 127.0.0.1 端口，请以管理员权限重新启动",
+  "tray.alreadyRunning": "控制台已在运行：请使用任务栏托盘图标中的“打开控制台”重新打开页面",
+  "startup.busy": "控制台已在运行：如页面已关闭，请使用任务栏托盘图标中的“打开控制台”重新打开",
+  "startup.listenerFailed": "无法在本机 127.0.0.1 上监听：请关闭占用该端口的程序，或以管理员身份重试",
+  "startup.startupFailed": "控制台启动失败：请检查程序文件是否完整、配置目录是否可写，然后重试",
+  "startup.unsupported": "控制台需要运行在 64 位 Windows 的 64 位 Windows PowerShell 5.1 上，本次未启动",
+  "state.needssetup": "需要初始设置",
+  "state.stopped": "已停止",
+  "state.starting": "正在启动",
+  "state.stopping": "正在停止",
+  "state.ready": "就绪",
+  "state.streaming": "串流中",
+  "state.error": "错误",
+  "state.unknown": "未知"
+}

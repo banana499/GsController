@@ -99,6 +99,15 @@ $script:workDir = Join-Path ([IO.Path]::GetTempPath()) ('GsBuildPreflight_' + [g
 $script:BundleSentinelContent = '# SENTINEL-BUNDLE synthetic fixture, must never be executed'
 $script:LicenseSentinelContent = 'SENTINEL-LICENSE synthetic product license text, not a real license'
 $script:LicensingSentinelContent = 'SENTINEL-LICENSING synthetic licensing notice, not a real license'
+# The full public runtime bundle contract: the build now rejects a bundle
+# missing any of these names, so the synthetic bundle must carry all of them.
+$script:BundleFileNames = @(
+    'gs_start_private.ps1', 'gs_stop_private.ps1', 'gs_start_with_hook.ps1',
+    'gs_supervisor.ps1', 'gs_grant_pipe_acl.ps1', 'gs_process_identity.ps1',
+    'gs_launcher.py', 'inject_nvstreamer.py', 'patch_applist_mem.py',
+    'gs_nsc_supported.py', 'gs_mdns_probe.py',
+    'NvStreamerBusHook.dll', 'GsStreamGuard.dll'
+)
 
 # All junctions created during the run are tracked here so cleanup can
 # remove the links themselves before any recursive delete.
@@ -128,17 +137,35 @@ try {
         }
         [IO.File]::WriteAllText((Join-Path $repo 'product\gs-product.ps1'), "# synthetic product entry`r`n")
         [IO.File]::WriteAllText((Join-Path $repo 'product\gs-diagnose.ps1'), "# synthetic diagnose helper`r`n")
+        # The build treats the seven-file local console set as required
+        # inputs; the synthetic product directory must carry all of them so
+        # the original preflight assertions stay the deciding failures.
+        foreach ($name in @('gs-console.ps1', 'gs-console-action.ps1', 'gs-console.vbs',
+                'gs-console.html', 'gs-console.css', 'gs-console.js',
+                'gs-console-strings.zh-CN.json')) {
+            [IO.File]::WriteAllText((Join-Path $repo "product\$name"), ("# synthetic console asset: " + $name + "`r`n"))
+        }
+        # gs-console.ps1 dot-sources gs-tray-model.ps1 unconditionally, so
+        # the build requires it as an independent input.
+        [IO.File]::WriteAllText((Join-Path $repo 'product\gs-tray-model.ps1'), "# synthetic tray model`r`n")
         foreach ($m in @('GsControl', 'GsLifecycle', 'GsRuntime')) {
             [IO.File]::WriteAllText((Join-Path $repo "src\$m\$m.psd1"), "# synthetic $m psd1`r`n")
             [IO.File]::WriteAllText((Join-Path $repo "src\$m\$m.psm1"), "# synthetic $m psm1`r`n")
         }
         [IO.File]::WriteAllText((Join-Path $repo 'installer\GsController.wxs'), "<Wix></Wix>`r`n")
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'installer\GsConsoleShortcut.xsl') -Destination (Join-Path $repo 'installer\GsConsoleShortcut.xsl')
         [IO.File]::WriteAllText((Join-Path $repo 'LICENSE'), ($script:LicenseSentinelContent + "`r`n"))
         [IO.File]::WriteAllText((Join-Path $repo 'LICENSING.md'), ($script:LicensingSentinelContent + "`r`n"))
         [IO.File]::WriteAllText((Join-Path $repo 'runtime-bundle\README.md'), "documentation only`r`n")
         [IO.File]::WriteAllText((Join-Path $repo 'runtime-bundle\gs-helper.ps1'), ($script:BundleSentinelContent + "`r`n"))
+        foreach ($name in $script:BundleFileNames) {
+            [IO.File]::WriteAllText((Join-Path $repo ("runtime-bundle\" + $name)), ($script:BundleSentinelContent + "`r`n"))
+        }
         Copy-Item -LiteralPath $script:buildScriptPath -Destination (Join-Path $repo 'scripts\build-product.ps1')
         Copy-Item -LiteralPath $script:preflightScriptPath -Destination (Join-Path $repo 'scripts\GsBuildPreflight.ps1')
+        # The build reuses the shared public bundle name list from the
+        # checker through -DefineOnly, so the synthetic repo carries it too.
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts\Test-GsPrerequisites.ps1') -Destination (Join-Path $repo 'scripts\Test-GsPrerequisites.ps1')
         return $repo
     }
 
@@ -635,6 +662,10 @@ static class FakeTool
         $stage = Join-Path $repo 'artifacts\product-stage'
         New-Item -ItemType Directory -Path $stage -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $stage 'GsController.wxs'), 'WXS-SENTINEL-MUST-SURVIVE')
+        # The harvest XSL is a required input too; it must be reachable
+        # through the junction so the existing input checks pass and the
+        # physical input protection stays the deciding rejection.
+        [IO.File]::WriteAllText((Join-Path $stage 'GsConsoleShortcut.xsl'), 'XSL-SENTINEL-MUST-SURVIVE')
         # installer is a junction to the stage; the wxs is reachable through
         # it, so the existing input checks pass and the physical input
         # protection must be the deciding rejection.

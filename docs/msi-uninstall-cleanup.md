@@ -2,6 +2,8 @@
 
 状态：**已实现源码与离线验证；真实安装/修复/升级/卸载尚未验收**（没有虚拟机，本机禁止真实 MSI 安装/卸载与真实任务操作）。VM 验收是发布阻塞项，见文末"未验收清单"。
 
+本页的 PrepareUninstall 和固定任务清理只适用于 **Legacy 配置**。`-RuntimeProfile Sunshine` 在编译时移除这两个动作及其调度；卸载该配置的 GsController 不调用旧运行时，也不管理外部 Sunshine。两种配置都需要分别做真实安装生命周期验收。Sunshine 使用步骤见 [Sunshine 首次使用](sunshine-quickstart.md)。
+
 公开接口依据：[生命周期与 PrepareUninstall 契约](lifecycle-hardening.md)。本页完整记录接线、失败边界与验收要求，不依赖未随仓库提供的内部设计记录。
 
 ## 目的

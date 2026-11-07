@@ -21,11 +21,24 @@ repository.
 [快速开始](docs/quickstart.md)，贡献与测试流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)，安全报告见 [SECURITY.md](SECURITY.md)。
 
-克隆后可以运行源码测试与只读依赖预检。真实串流还依赖独立运行时包和
-使用者合法自备的 NVIDIA 组件；截至 2026-11-07，运行时包的公开获取地址、
-版本与校验值尚未公布，新版本 MSI 的干净环境安装生命周期也尚未验收。
-因此当前源码仍处于发布准备阶段，不能将夹具 MSI 当作可串流发行包。
+克隆后可以运行源码测试与只读依赖预检。Legacy 路线仍依赖独立运行时包和
+合法自备的 NVIDIA 组件，其公开交付材料尚未齐备。新增 Sunshine 路线使用
+可公开获取的官方 Sunshine 安装包，无需这些旧依赖；新版本 MSI 的干净环境
+安装生命周期和首次配对串流均尚未验收。
+产品源码预览已于 2026-11-07 [公开发布](https://github.com/banana499/GsController/releases/tag/source-preview-2026-11-07)，绑定提交 `0f0da04`；该版本 Windows CI 为 17 套件通过、3 套真实集成跳过、0 失败，匿名下载及文件哈希已核验。完整可串流发行仍待完成，夹具 MSI 不能作为可串流发行包。
 具体完成条件见 [开源发布验收](docs/release-readiness.md)。
+
+## Sunshine 新用户路线（开发中）
+
+新增配置使用官方 Sunshine 负责串流、账号与 PIN 配对，GsController 提供本地引导和只读检查。这条路线无需本项目旧运行时包或自备 NVIDIA 组件树；Sunshine 由用户独立安装，控制台不接收密码或 PIN。源码入口为 `Start-GsController-Sunshine.cmd`，构建使用 `-RuntimeProfile Sunshine`。后端 42 项、前端 14 项检查通过，旧接口 59 项回归通过；两种 MSI 配置的离线构建及表检查通过，真实安装、配对与串流仍未验收。具体流程、官方版本记录和边界见 [Sunshine 首次使用](docs/sunshine-quickstart.md)。本功能未包含在已发布的源码预览中。
+
+安装生命周期的下一道检查是 [Sunshine MSI 隔离验收](docs/sunshine-msi-acceptance.md)：在 GitHub 托管的 Windows runner 内安装、修复、升级和卸载控制器，默认本地调用只生成计划。该流程不会安装 Sunshine 或处理配对凭据，结果也不能替代 Windows 11 桌面和 GPU 串流验收。
+
+## 本地控制台（开发分支）
+
+双击根目录 `Start-GsController.cmd`，可打开中文本地控制台：总览、设置、连接指南和诊断。它与原托盘并存，使用现有产品接口；保存偏好与执行部署分开，目录变更和部署需先停止串流。
+
+仅体验界面时，可用 `product/gs-console.ps1 -Demo`。演示模式不调用真实运行时或系统任务。详细启动方式、权限和边界见 [本地控制台](docs/local-console.md)。此分支新增界面尚未作为新的公开发行版发布。
 
 ## Architecture
 
@@ -38,6 +51,7 @@ repository.
 | `product/gs-diagnose.ps1` | Read-only diagnostics report: hashes, runtime config, status file, serverinfo, PID files, redacted log tails, and a `hygiene` section (supervisor task, pause flags, script-folder ACL allowlist, status-file ambiguity). Imports no product module |
 | `product/gs-support.ps1` | Support bundle: runs the diagnose report with a deadline, rescans the decoded report for secrets, and zips it with redacted tray log tails |
 | `product/gs-tray.ps1`, `gs-tray-model.ps1`, `gs-tray.vbs`, `gs-tray-strings.zh-CN.json` | Notification-area tray with six states (Stopped / Starting / Stopping / Ready / Streaming / Error), Chinese UI text from the string table, Start / Stop / Recover / support-bundle menu items and stream balloons |
+| `product/gs-console.ps1`, `gs-console-action.ps1`, `gs-console.vbs`, `gs-console.html/css/js`, `gs-console-strings.zh-CN.json` | Local Chinese web console with overview, settings, connection guidance and limited diagnostics; loopback API and fixed CLI actions; `Start-GsController.cmd` is the source entry |
 | `tools/gs-soak-monitor.ps1` | Soak tool: Monitor mode samples status, serverinfo, PIDs and memory; Cycle mode runs repeated Stop/Start (plan only unless `-Execute`) |
 | `src/GsSecurity`, `tools/Get-GsAclPlan.ps1` | Repository-only in-memory ACL policy and read-only preflight. Never applies permissions or reports apply-ready; not wired into Install or the MSI. See [ACL policy](docs/acl-policy.md) |
 | `installer/GsController.wxs` | WiX 3.14 per-machine MSI; `scripts/build-product.ps1` stages every top-level `product/` file next to `gs-product.ps1` |

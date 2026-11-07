@@ -376,6 +376,21 @@ function Test-GsManifestComparison {
     return [pscustomobject]@{ Accepted = ($violations.Count -eq 0); Violations = @($violations) }
 }
 
+function New-GsAcceptanceHttpRequest {
+    # Construct only; no connection is made until the caller gets a response.
+    param([ValidateRange(1, 65535)][int]$Port, [string]$Path, [string]$Session = '')
+    if (-not $Path.StartsWith('/')) { throw 'Probe paths must be relative to the loopback origin.' }
+    $request = [System.Net.HttpWebRequest]::Create(('http://127.0.0.1:' + $Port + $Path))
+    $request.Method = 'GET'
+    $request.Host = ('127.0.0.1:' + $Port)
+    $request.Timeout = 5000
+    $request.ReadWriteTimeout = 5000
+    $request.Proxy = $null
+    $request.AllowAutoRedirect = $false
+    if ($Session -ne '') { $request.Headers.Add('X-Gs-Session', $Session) }
+    return $request
+}
+
 function Get-GsMaskedText {
     # Pure masking: replaces any occurrence of the session token (and other
     # secrets) in diagnostic text so tokens can never leak into logs or the
@@ -785,13 +800,7 @@ try {
     }
     function Invoke-GsProbeHttp {
         param([string]$Path, [string]$Session = '')
-        $request = [System.Net.HttpWebRequest]::Create(('http://127.0.0.1:' + $consolePort + $Path))
-        $request.Method = 'GET'
-        $request.Host = ('127.0.0.1:' + $consolePort)
-        $request.Timeout = 5000
-        $request.ReadWriteTimeout = 5000
-        $request.Proxy = $null
-        $request.AllowAutoRedirect = $false
+        $request = New-GsAcceptanceHttpRequest -Port $consolePort -Path $Path -Session $Session
         $response = $null
         try {
             try {

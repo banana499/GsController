@@ -356,6 +356,20 @@ try {
         } finally { Set-Item Function:script:Get-GsProductState -Value $originalState }
     }
 
+    Invoke-Test 'HTTP request construction sends the session only in the intended header' {
+        $token = 'synthetic-acceptance-session'
+        $request = New-GsAcceptanceHttpRequest -Port 47991 -Path '/api/sunshine/status' -Session $token
+        Assert-True ($request.Headers['X-Gs-Session'] -eq $token) 'authenticated probes carry the session header'
+        Assert-True (-not $request.RequestUri.AbsoluteUri.Contains($token)) 'the URL never contains the session'
+        Assert-True ($request.RequestUri.Host -eq '127.0.0.1') 'the origin stays loopback'
+        Assert-True ($request.Timeout -eq 5000 -and -not $request.AllowAutoRedirect -and $null -eq $request.Proxy) 'probes are bounded and do not redirect or use a proxy'
+        $anonymous = New-GsAcceptanceHttpRequest -Port 47991 -Path '/api/sunshine/status'
+        Assert-True ([string]::IsNullOrEmpty($anonymous.Headers['X-Gs-Session'])) 'negative probes really omit the header'
+        # Neither request calls GetResponse; no socket is opened by this test.
+        $request.Abort()
+        $anonymous.Abort()
+    }
+
     Invoke-Test 'masking: the session token never survives into diagnostic text' {
         $token = [guid]::NewGuid().ToString('N')
         $masked = Get-GsMaskedText -Text ('launch url http://127.0.0.1:1/#session=' + $token + ' end') -Secret $token

@@ -794,10 +794,20 @@ try {
         $child = Start-ChildPowerShell -Command 'Start-Sleep -Seconds 90'
         [System.IO.File]::WriteAllText((Join-Path $area.StateDir 'nvs_pid.json'), ('{"pid":' + $child.Process.Id + '}'), $utf8)
         try {
+            # The smoke run's verdict must not depend on the fake role process's
+            # startup memory jitter: a freshly started powershell drifts a few
+            # hundred KB of PrivateMb over this 20 s window while JIT-warming,
+            # and the slope extrapolation turns ~0.4 MB/19 s into >50 MB/h on a
+            # loaded CI machine (real GitHub CI failure: slope 75.92 MB/h,
+            # verdict fail, exit 1). This test verifies the run pipeline, not a
+            # leak, so it passes the explicit threshold seam; the REAL default
+            # threshold judgment has its own deterministic regression directly
+            # below (a controlled-growth process judged by the default 50).
             $monitor = Start-ChildPowerShell -Command ((New-ToolCommand -Arguments @{
                 Mode        = 'Monitor'
                 DurationSec = 20
                 IntervalSec = 1
+                MaxMemorySlopeMBPerHour = 100000
                 StateDir    = $area.StateDir
                 OutputDir   = $area.OutputDir
                 ServerInfoUri = ('http://127.0.0.1:{0}/serverinfo' -f $server.Port)
@@ -822,6 +832,45 @@ try {
             Assert-True (@($events | Where-Object { $_.type -eq 'StateChange' }).Count -ge 1) 'a StateChange event exists'
             Assert-True (@($events | Where-Object { $_.type -eq 'CurrentGameChange' }).Count -ge 1) 'a CurrentGameChange event exists'
             Assert-True (@($events | Where-Object { $_.type -eq 'AvailableAfterQuit' }).Count -ge 1) 'an AvailableAfterQuit event records the measurement'
+        } finally {
+            try { if (-not $child.Process.HasExited) { $child.Process.Kill() } } catch { }
+            Stop-FakeHttpServer -Server $server
+        }
+    }
+
+    Invoke-Test 'Monitor fails the verdict on a real over-threshold memory slope (controlled growth fixture)' {
+        # Deterministic positive regression for the slope THRESHOLD judgment:
+        # the fake nvs role process grows its private memory by ~2 MB every
+        # 0.75 s (rooted LOH byte[] allocations, so GC cannot reclaim them and
+        # LOH is never compacted), which dwarfs any startup/JIT jitter. The
+        # default threshold (50 MB/h) is deliberately NOT overridden, so a real
+        # over-threshold slope still fails the run and exit code. serverinfo is
+        # a valid idle fake (the same READY_SERVER_FREE shape the smoke run
+        # uses) so every probe answers immediately and the sample cadence stays
+        # at -IntervalSec even on a loaded machine; a refused port would cost a
+        # full connect timeout per sample and shrink the window instead.
+        $area = New-SoakWorkArea
+        Write-SoakStatus -StateDir $area.StateDir -State 'ready'
+        $server = New-FakeHttpServer -StatusCode 200 -Body (New-ServerInfoXml -CurrentGame '0' -ServerState 'READY_SERVER_FREE')
+        $child = Start-ChildPowerShell -Command '$a = New-Object System.Collections.Generic.List[object]; for ($i = 0; $i -lt 60; $i++) { $null = $a.Add((New-Object byte[] 2097152)); Start-Sleep -Milliseconds 750 }'
+        [System.IO.File]::WriteAllText((Join-Path $area.StateDir 'nvs_pid.json'), ('{"pid":' + $child.Process.Id + '}'), $utf8)
+        try {
+            $raw = Invoke-ToolChild -Arguments @{
+                Mode        = 'Monitor'
+                DurationSec = 6
+                IntervalSec = 1
+                StateDir    = $area.StateDir
+                OutputDir   = $area.OutputDir
+                ServerInfoUri = ('http://127.0.0.1:{0}/serverinfo' -f $server.Port)
+            } -TimeoutSec 60
+            Assert-True ($raw.ExitCode -ne 0) 'an over-threshold memory slope exits non-zero'
+            $summary = Read-SoakSummary -OutputDir $area.OutputDir
+            Assert-Equal 'fail' $summary.verdict 'verdict is fail'
+            Assert-True ($summary.samples -ge 4) ('at least four samples ran, got ' + $summary.samples)
+            Assert-True ($null -ne $summary.memorySlopeMBPerHour) 'a memory slope was computed'
+            Assert-True ($summary.memorySlopeMBPerHour -gt 300) ('the slope reflects the controlled growth, got ' + $summary.memorySlopeMBPerHour + ' MB/h')
+            $slopeReasons = @($summary.verdictReasons | Where-Object { $_ -like '*MemorySlope*' })
+            Assert-True ($slopeReasons.Count -ge 1) 'a verdict reason names the MemorySlope'
         } finally {
             try { if (-not $child.Process.HasExited) { $child.Process.Kill() } } catch { }
             Stop-FakeHttpServer -Server $server
